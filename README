@@ -9,7 +9,7 @@ It allow to use only one command instead of:
 - ls
 - less ($PAGER or less)
 - gnome-open (need to improve this)
-- vi ($EDITOR or vim)
+- vi ($EDITOR or vi)
 - tar -t[jz]
 - {bz|z}cat
 
