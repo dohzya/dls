@@ -23,16 +23,29 @@ def add_arg arg, all=false
   $args << arg
 end
 
+def usage
+  puts <<USAGE
+usage: #{__FILE__} [-e] [-p] [-] [-- {args} ...]
+  -e --editor: use editor instead of pager
+  -p --pager : use pager for ls output
+  -          : acts like a pager
+  --         : arguments that are not interpreted by dls
+USAGE
+  exit
+end
+
 it = ARGV.dup
 while arg = it.shift
   case arg
   when '-'
     $opts[:stdin]  = true
     add_arg arg
-  when /-e|--editor/
+  when /-e|--e|--ed|--edi|--edit|--edito|--editor/
     $opts[:editor] = true
-  when /-p|--pager/
+  when /-p|--p|--pa|--pag|--page|--pager/
     $opts[:pager]  = true
+  when /-h|--h|--he|--hel|--help/
+    usage
   when '--'
     it.each{|i| add_arg i, true}
     it.clear
