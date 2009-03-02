@@ -1,0 +1,22 @@
+  DLS
+
+dls is an terminal based universal open.
+
+What does it mean ? 
+I don't know. Have you a better traduction ? :)
+
+It allow to use only one command instead of:
+- ls
+- less ($PAGER or less)
+- gnome-open (need to improve this)
+- vi ($EDITOR or vim)
+- tar -t[jz]
+- {bz|z}cat
+
+usage:
+ `dls` -> ls
+ `dls -` or `... | dls` -> less
+ `dls ...` -> if folder then ls else if text? then less else open end end
+ `dls -e ...` -> if folder then ls else if test? then vim else open end end
+ `dls -p ...` -> if folder then ls | less else if text? then less else open end end
+ `dls -p -e ...` -> if folder then ls | less else if text? then vim else open end end

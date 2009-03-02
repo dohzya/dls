@@ -1,12 +1,9 @@
 #!/usr/bin/env ruby
 
-require 'fcntl'
+# author: dohzya
+# licence: GPLv3
 
-=begin
-todo:
-- convert shell call to builtin pipe for gzip and bzip2
-- use env for options
-=end
+require 'fcntl'
 
 editor_ext = ENV['DLS_EDITOR_EXT'] || %w(.txt)
 open_ext = ENV['DLS_OPEN_EXT'] || %w(.html .pdf)
