@@ -28,7 +28,7 @@ def usage
 usage: #{__FILE__} [-e] [-p] [-] [-- {args} ...]
   -e --editor: use editor instead of pager
   -p --pager : use pager for ls output
-  -          : acts like a pager
+  -          : force to acts like a pager
   --         : arguments that are not interpreted by dls
 USAGE
   exit
@@ -110,17 +110,24 @@ when :decompress
     system "command #{$args.join ' '} | #{__FILE__} -"
   end
 when :editor
-  command = ENV['EDITOR'] || "vim"
+  command = ENV['DLS_EDITOR'] || ENV['EDITOR'] || "vim"
   exec command, *$args
 when :open
-  exec "gnome-open", $file
+  command = ENV['DLS_OPEN'] || "gnome-open"
+  exec command, $file
 when :pager
-  command = ENV['PAGER'] || "less"
-  exec command, (if command =~ /less/ then ENV['LESS'] || "-FRSX" end), *$args
+  command = ENV['DLS_PAGER'] || ENV['PAGER'] || "less"
+  options = ENV['DLS_PAGER_OPTS']
+  unless options
+      options = ENV['LESS'] || '-FRSX' if command == 'less'
+  end
+  exec command, options, *$args
 when :ls
+  command = ENV['DLS_LS'] || "ls"
+  options = ENV['DLS_LS_OPTS'].split(/#{ENV['DLS_SEPARATOR'] || ' '}/) rescue %w(-h -F --color=auto)
   if $opts[:pager]
-    system "ls -h -F --color=auto #{$args.join ' '} | #{__FILE__} -"
+    system "#{command} #{options.join ' '} #{$args.join ' '} | #{__FILE__} -"
   else
-    exec "ls", "-h", "-F", "--color=auto", *$args
+    exec command, *(options + $args) # maybe *options,*$args works ?
   end
 end
