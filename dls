@@ -5,129 +5,154 @@
 
 require 'fcntl'
 
-editor_ext = ENV['DLS_EDITOR_EXT'] || %w(.txt)
-open_ext = ENV['DLS_OPEN_EXT'] || %w(.html .pdf)
-
-$args = []
-$opts = {}
-$file = nil
-
-def add_arg arg, all=false
-  unless $file
-    if all
-      $file = arg
-    else
-      $file = arg unless arg =~ /^-/
-    end
+class DLS
+  Editor_ext = ENV['DLS_EDITOR_EXT'] || %w(.txt)
+  Open_ext   = ENV['DLS_OPEN_EXT'] || %w(.html .pdf)
+  def initialize
+    @args  = []
+    @opts  = {}
+    @file  = nil
   end
-  $args << arg
-end
+  private
+  def add arg, all=false
+    unless @file
+    if all
+      @file = arg
+    else
+      @file = arg unless arg =~ /^-/
+    end
+    end
+    @args << arg
+  end
 
-def usage
-  puts <<USAGE
+  def usage stop
+    puts <<USAGE
 usage: #{__FILE__} [-e] [-p] [-] [-- {args} ...]
   -e --editor: use editor instead of pager
   -p --pager : use pager for ls output
   -          : force to acts like a pager
   --         : arguments that are not interpreted by dls
 USAGE
-  exit
-end
-
-it = ARGV.dup
-while arg = it.shift
-  case arg
-  when '-'
-    $opts[:stdin]  = true
-    add_arg arg
-  when /-e|--e|--ed|--edi|--edit|--edito|--editor/
-    $opts[:editor] = true
-  when /-p|--p|--pa|--pag|--page|--pager/
-    $opts[:pager]  = true
-  when /-h|--h|--he|--hel|--help/
-    usage
-  when '--'
-    it.each{|i| add_arg i, true}
-    it.clear
-  else
-    add_arg arg
   end
-end
+  
+  def parse args
+    it = args.dup
+    while arg = it.shift
+      case arg
+      when '-'
+        @opts[:stdin]  = true
+        add arg
+      when /-e|--e|--ed|--edi|--edit|--edito|--editor/
+        @opts[:editor] = true
+      when /-p|--p|--pa|--pag|--page|--pager/
+        @opts[:pager]  = true
+      when /-h|--h|--he|--hel|--help/
+        usage
+        exit
+      when '--'
+        it.each{|i| add_arg i, true}
+        it.clear
+      else
+        add arg
+      end
+    end
+    @opts[:stdin] = true if STDIN.fcntl(Fcntl::F_GETFL, 0).zero?
+  end
 
-$opts[:stdin] = true if STDIN.fcntl(Fcntl::F_GETFL, 0).zero?
-
-if $opts[:stdin]
-  cmd = :pager
-elsif $file
-  ext = $file.sub /.*([.][^.]+)$/, '\1'
-  case
-  when File.directory?( $file )
-    cmd = :ls
-  when open_ext.include?( ext )
-    cmd = :open
-  when editor_ext.include?( ext )
-    cmd = :editor
-  else
-    type = `file -L -b -z #{$file}`
-    case type
-    when /bzip2 compressed data/
-      cmd = :decompress
-      algo = :bzip2
-    when /gzip compressed data/
-      cmd = :decompress
-      algo = :gzip
-    when /text/
-      cmd = :editor
+  def compute
+    if @opts[:stdin]
+      @cmd = :pager
+    elsif @file
+      ext = @file.sub /.*([.][^.]+)$/, '\1'
+      case
+      when File.directory?( @file )
+        @cmd = :ls
+      when Open_ext.include?( ext )
+        @cmd = :open
+      when Editor_ext.include?( ext )
+        @cmd = :editor
+      else
+        type = `file -L -b -z #{@file}`
+        case type
+        when /bzip2 compressed data/
+          @cmd = :decompress
+          @algo = :bzip2
+        when /gzip compressed data/
+          @cmd = :decompress
+          @algo = :gzip
+        when /text/
+          @cmd = :editor
+        else
+          @cmd = :open
+        end
+      end
     else
-      cmd = :open
+      @cmd = :ls
+    end
+    if @cmd == :editor && !@opts[:editor]
+      @cmd = :pager
+    end
+    @cmd
+  end
+
+  def launch
+    case @cmd
+    when :decompress
+      if @file =~ /[.]tar[.]/
+        option  = case @algo
+                  when :bzip2
+                'j'
+                  when :gzip
+                'z'
+                  end
+      system "tar -t#{option}f #{@file} | #{__FILE__} -"
+      else
+        command = case @algo
+                  when :bzip2
+                'bzcat'
+                  when :gzip
+                'zcat'
+                  end
+        system "command #{@args.join ' '} | #{__FILE__} -"
+      end
+    when :editor
+      command = ENV['DLS_EDITOR'] || ENV['EDITOR'] || "vi"
+      exec command, *@args
+    when :open
+      command = ENV['DLS_OPEN'] || "gnome-open"
+      exec command, @file
+    when :pager
+      command = ENV['DLS_PAGER'] || ENV['PAGER'] || "pager"
+      options = ENV['DLS_PAGER_OPTS']
+      if options.nil? && command =~ /pager|less/
+        options = ENV['LESS'] || '-FRSX'
+      end
+      exec command, options, *@args
+    when :ls
+      command = ENV['DLS_LS'] || "ls"
+      options = ENV['DLS_LS_OPTS'].split(/#{ENV['DLS_SEPARATOR'] || ' '}/) rescue %w(-h -F --color=auto)
+      if @opts[:pager]
+        system "#{command} #{options.join ' '} #{@args.join ' '} | #{__FILE__} -"
+      else
+        exec command, *(options + @args) # maybe *options,*$args works ?
+      end
     end
   end
-else
-  cmd = :ls
+
+  public
+
+  def run args
+    parse args
+    compute
+    launch
+  end
+
+  def self.launch args
+    new.run args
+  end
 end
 
-if cmd == :editor && !$opts[:editor]
-  cmd = :pager
+if __FILE__ == $0
+  DLS.launch ARGV
 end
 
-case cmd
-when :decompress
-  if $file =~ /[.]tar[.]/
-    option  = case algo
-              when :bzip2
-                'j'
-              when :gzip
-                'z'
-              end
-    system "tar -t#{option}f #{$file} | #{__FILE__} -"
-  else
-    command = case algo
-              when :bzip2
-                'bzcat'
-              when :gzip
-                'zcat'
-              end
-    system "command #{$args.join ' '} | #{__FILE__} -"
-  end
-when :editor
-  command = ENV['DLS_EDITOR'] || ENV['EDITOR'] || "vim"
-  exec command, *$args
-when :open
-  command = ENV['DLS_OPEN'] || "gnome-open"
-  exec command, $file
-when :pager
-  command = ENV['DLS_PAGER'] || ENV['PAGER'] || "less"
-  options = ENV['DLS_PAGER_OPTS']
-  unless options
-      options = ENV['LESS'] || '-FRSX' if command == 'less'
-  end
-  exec command, options, *$args
-when :ls
-  command = ENV['DLS_LS'] || "ls"
-  options = ENV['DLS_LS_OPTS'].split(/#{ENV['DLS_SEPARATOR'] || ' '}/) rescue %w(-h -F --color=auto)
-  if $opts[:pager]
-    system "#{command} #{options.join ' '} #{$args.join ' '} | #{__FILE__} -"
-  else
-    exec command, *(options + $args) # maybe *options,*$args works ?
-  end
-end
