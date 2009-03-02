@@ -1,0 +1,116 @@
+#!/usr/bin/env ruby
+
+require 'fcntl'
+
+=begin
+todo:
+- convert shell call to builtin pipe for gzip and bzip2
+- use env for options
+=end
+
+editor_ext = ENV['DLS_EDITOR_EXT'] || %w(.txt)
+open_ext = ENV['DLS_OPEN_EXT'] || %w(.html .pdf)
+
+$args = []
+$opts = {}
+$file = nil
+
+def add_arg arg, all=false
+  unless $file
+    if all
+      $file = arg
+    else
+      $file = arg unless arg =~ /^-/
+    end
+  end
+  $args << arg
+end
+
+it = ARGV.dup
+while arg = it.shift
+  case arg
+  when '-'
+    $opts[:stdin]  = true
+    add_arg arg
+  when /-e|--editor/
+    $opts[:editor] = true
+  when /-p|--pager/
+    $opts[:pager]  = true
+  when '--'
+    it.each{|i| add_arg i, true}
+    it.clear
+  else
+    add_arg arg
+  end
+end
+
+$opts[:stdin] = true if STDIN.fcntl(Fcntl::F_GETFL, 0).zero?
+
+if $opts[:stdin]
+  cmd = :pager
+elsif $file
+  ext = $file.sub /.*([.][^.]+)$/, '\1'
+  case
+  when File.directory?( $file )
+    cmd = :ls
+  when open_ext.include?( ext )
+    cmd = :open
+  when editor_ext.include?( ext )
+    cmd = :editor
+  else
+    type = `file -L -b -z #{$file}`
+    case type
+    when /bzip2 compressed data/
+      cmd = :decompress
+      algo = :bzip2
+    when /gzip compressed data/
+      cmd = :decompress
+      algo = :gzip
+    when /text/
+      cmd = :editor
+    else
+      cmd = :open
+    end
+  end
+else
+  cmd = :ls
+end
+
+if cmd == :editor && !$opts[:editor]
+  cmd = :pager
+end
+
+case cmd
+when :decompress
+  if $file =~ /[.]tar[.]/
+    option  = case algo
+              when :bzip2
+                'j'
+              when :gzip
+                'z'
+              end
+    system "tar -t#{option}f #{$file} | #{__FILE__} -"
+  else
+    command = case algo
+              when :bzip2
+                'bzcat'
+              when :gzip
+                'zcat'
+              end
+    system "command #{$args.join ' '} | #{__FILE__} -"
+  end
+when :editor
+  command = ENV['EDITOR'] || "vim"
+  exec command, *$args
+when :open
+  exec "gnome-open", $file
+when :pager
+  command = ENV['PAGER'] || "less"
+  exec command, (if command =~ /less/ then ENV['LESS'] || "-FRSX" end), *$args
+when :ls
+  if $opts[:pager]
+    system "ls -h -F --color=auto #{$args.join ' '} | #{__FILE__} -"
+  else
+    exec "ls", "-h", "-F", "--color=auto", *$args
+  end
+end
