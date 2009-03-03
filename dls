@@ -49,6 +49,8 @@ USAGE
       when /-h|--h|--he|--hel|--help/
         usage
         exit
+      when /-d|--d|--de|--deb|--deb|--debu|--debug/
+        @opts[:debug] = true
       when '--'
         it.each{|i| add_arg i, true}
         it.clear
@@ -122,9 +124,9 @@ USAGE
       command = ENV['DLS_OPEN'] || "gnome-open"
       exec command, @file
     when :pager
-      command = ENV['DLS_PAGER'] || ENV['PAGER'] || "pager"
+      command = ENV['DLS_PAGER'] || ENV['PAGER'] || "less"
       options = ENV['DLS_PAGER_OPTS']
-      if options.nil? && command =~ /pager|less/
+      if options.nil? && command =~ /less/
         options = ENV['LESS'] || '-FRSX'
       end
       exec command, options, *@args
@@ -137,6 +139,16 @@ USAGE
         exec command, *(options + @args) # maybe *options,*$args works ?
       end
     end
+  end
+
+  def exec cmd, *args
+    puts "#{cmd} #{args.join ' '}" if @opts[:debug]
+    Kernel.exec cmd, *args
+  end
+
+  def system str
+    puts str if @opts[:debug]
+    Kernel.system str
   end
 
   public
