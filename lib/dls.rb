@@ -1,0 +1,171 @@
+#!/usr/bin/env ruby
+
+# author: dohzya
+# licence: GPLv3
+here = here_dir __FILE__
+require here/"actions/action.rb"
+Dir[here/"utils/*.rb"].each {|file| require file}
+
+module DLS
+    Editor_ext = ENV['DLS_EDITOR_EXT'] || %w(.txt)
+    Open_ext   = ENV['DLS_OPEN_EXT'] || %w(.html .pdf)
+    def initialize
+      @args  = []
+      @opts  = {}
+      @file  = nil
+    end
+    private
+    def add arg, all=false
+      unless @file
+        if all
+          @file = arg
+        else
+          @file = arg unless arg =~ /^-/
+        end
+      end
+      @args << arg
+    end
+
+    def usage stop
+      puts <<USAGE
+usage: #{__FILE__} [-e] [-p] [-] [-- {args} ...]
+  -e --editor: use editor instead of pager
+  -p --pager : use pager for ls output
+  -          : force to acts like a pager
+  --         : arguments that are not interpreted by dls
+USAGE
+    end
+
+    def parse args
+      it = args.dup
+      while arg = it.shift
+        case arg
+        when '-'
+          @opts[:stdin]  = true
+          add arg
+        when /-e|--e|--ed|--edi|--edit|--edito|--editor/
+          @opts[:editor] = true
+        when /-p|--p|--pa|--pag|--page|--pager/
+          @opts[:pager]  = true
+        when /-h|--h|--he|--hel|--help/
+          usage
+          exit
+        when /-d|--d|--de|--deb|--deb|--debu|--debug/
+          @opts[:debug] = true
+        when '--'
+          it.each{|i| add_arg i, true}
+          it.clear
+        else
+          add arg
+        end
+      end
+      @opts[:stdin] = true if Tests.stdin?
+    end
+
+    def compute
+      if @opts[:stdin]
+        @cmd = :pager
+      elsif @file
+        ext = @file.sub /.*([.][^.]+)$/, '\1'
+        case
+        when File.directory?( @file )
+          @cmd = :ls
+        when Open_ext.include?( ext )
+          @cmd = :open
+        when Editor_ext.include?( ext )
+          @cmd = :editor
+        else
+          type = `file -L -b -z #{@file}`
+          case type
+          when /bzip2 compressed data/
+            @cmd = :decompress
+            @algo = :bzip2
+          when /gzip compressed data/
+            @cmd = :decompress
+            @algo = :gzip
+          when /text/
+            @cmd = :editor
+          else
+            @cmd = :open
+          end
+        end
+      else
+        @cmd = :ls
+      end
+      if @cmd == :editor && !@opts[:editor]
+        @cmd = :pager
+      end
+      @cmd
+    end
+
+    def launch
+      case @cmd
+      when :decompress
+        if @file =~ /[.]tar[.]/
+          option  = case @algo
+                    when :bzip2
+                'j'
+                    when :gzip
+                'z'
+                    end
+        system "tar -t#{option}f #{@file} | #{__FILE__} -"
+        else
+          command = case @algo
+                    when :bzip2
+                'bzcat'
+                    when :gzip
+                'zcat'
+                    end
+          system "command #{@args.join ' '} | #{__FILE__} -"
+        end
+      when :editor
+        command = ENV['DLS_EDITOR'] || ENV['EDITOR'] || "vi"
+        exec command, *@args
+      when :open
+        command = ENV['DLS_OPEN'] || "gnome-open"
+        exec command, @file
+      when :pager
+        command = ENV['DLS_PAGER'] || ENV['PAGER'] || "less"
+        options = ENV['DLS_PAGER_OPTS']
+        if options.nil? && command =~ /less/
+          options = ENV['LESS'] || '-FRSX'
+        end
+        exec command, options, *@args
+      when :ls
+        command = ENV['DLS_LS'] || "ls"
+        options = ENV['DLS_LS_OPTS'].split(/#{ENV['DLS_SEPARATOR'] || ' '}/) rescue %w(-h -F --color=auto)
+        if @opts[:pager]
+          system "#{command} #{options.join ' '} #{@args.join ' '} | #{__FILE__} -"
+        else
+          exec command, *(options + @args) # maybe *options,*$args works ?
+        end
+      end
+    end
+
+    def exec cmd, *args
+      puts "#{cmd} #{args.join ' '}" if @opts[:debug]
+      Kernel.exec cmd, *args
+    end
+
+    def system str
+      puts str if @opts[:debug]
+      Kernel.system str
+    end
+
+    public
+
+    def run args
+      parse args
+      compute
+      launch
+    end
+
+    def self.launch args
+      new.run args
+    end
+  end
+
+  if __FILE__ == $0
+    DLS.launch ARGV
+  end
+
